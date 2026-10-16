@@ -2,7 +2,7 @@
 
 Ejercicio práctico de **procesamiento de datos en tiempo real** con **Python, Flask, Apache Kafka, Apache Spark Structured Streaming y MongoDB**, todo apoyado en **Docker**.
 
-Las transacciones de una red de cajeros automáticos se generan desde un **dashboard web** (o con un simulador automático), viajan por Kafka, Spark las procesa y las guarda en MongoDB, y el dashboard muestra el historial y las **alertas** de montos elevados.
+Las transacciones de una red de cajeros automáticos se generan desde un **dashboard web** (de forma manual o con su simulador automático) o con un script productor por consola, viajan por Kafka, Spark las procesa y las guarda en MongoDB, y el dashboard muestra el historial y las **alertas** de montos elevados.
 
 ---
 
@@ -27,7 +27,8 @@ Las transacciones de una red de cajeros automáticos se generan desde un **dashb
 Construir un flujo completo de procesamiento de eventos en tiempo real, desde que se origina la transacción hasta que se almacena y se visualiza:
 
 ```text
-🌐 Dashboard web (app.py)          🏧 Productor automático (productor.py)
+🌐 Dashboard web (app.py)          🏧 Productor por consola (productor.py)
+   envío manual + simulador             (opcional)
         │   localhost:9092                  │   localhost:9092
         └──────────────┬────────────────────┘
                        ▼
@@ -67,7 +68,7 @@ Ejemplo de evento enviado desde el dashboard:
 }
 ```
 
-> Los eventos del simulador (`productor.py`) tienen los mismos campos, salvo `source` y `usuario`, y su `transaction_id` es secuencial (`TX-0001`, `TX-0002`, ...).
+> Las transacciones del simulador automático del dashboard usan este mismo formato, con el nombre de usuario que escribas. Las de `productor.py` tienen los mismos campos, salvo `source` y `usuario`, y su `transaction_id` es secuencial (`TX-0001`, `TX-0002`, ...).
 
 ---
 
@@ -151,13 +152,13 @@ ejercicio-atm/
 ├── Dockerfile.spark            # Imagen de Spark con PyMongo instalado
 ├── requirements.txt            # Dependencias de Python (Flask, kafka-python, pymongo)
 ├── app.py                      # Servidor Flask: dashboard y API REST
-├── productor.py                # Simulador automático de transacciones ATM
+├── productor.py                # Simulador de transacciones por consola (opcional)
 ├── spark_consumer.py           # Spark Streaming: guarda transacciones y genera alertas
 ├── templates/
 │   └── index.html              # Página del dashboard
 ├── static/
 │   ├── css/style.css           # Estilos del dashboard
-│   └── js/dashboard.js         # Lógica del dashboard (envío y actualización cada 5 s)
+│   └── js/dashboard.js         # Lógica del dashboard (envío manual, simulador automático, actualización cada 5 s)
 ├── spark_consumer_original.py  # Versiones anteriores del consumidor (solo referencia)
 ├── spark_consumer_antes_transacciones.py
 └── .ivy2/                      # Caché de paquetes de Spark (se crea en el paso 4)
@@ -194,7 +195,7 @@ Validaciones: el cajero debe ser `ATM-001` … `ATM-005`, el tipo debe ser uno d
 
 ### `productor.py`
 
-Simula 5 cajeros (`ATM-001` … `ATM-005`), genera una transacción aleatoria cada 1 a 3 segundos y la envía al tópico `transacciones-atm`. Los montos posibles son `50.000`, `100.000`, `150.000`, `200.000`, `300.000`, `500.000` y `1.000.000` COP; este último supera el umbral y dispara alertas. **Es opcional**: sirve para generar carga automática sin usar el formulario.
+Simula 5 cajeros (`ATM-001` … `ATM-005`), genera una transacción aleatoria cada 1 a 3 segundos y la envía al tópico `transacciones-atm`. Los montos posibles son `50.000`, `100.000`, `150.000`, `200.000`, `300.000`, `500.000` y `1.000.000` COP; este último supera el umbral y dispara alertas. **Es opcional**: genera carga desde la consola; el dashboard ya incluye su propio simulador automático.
 
 ### `spark_consumer.py`
 
@@ -206,19 +207,22 @@ Lee el tópico con Spark Structured Streaming y, para cada micro-batch (`foreach
 
 ### Dashboard (`templates/` y `static/`)
 
-* **Enviar transacción:** formulario con usuario, cajero, tipo y monto.
-* **Indicadores de la sesión:** enviadas, confirmadas y con error.
-* **Últimos envíos:** actividad de la sesión actual del navegador.
-* **Transacciones almacenadas:** hasta 100 registros recientes de MongoDB.
-* **Alertas detectadas:** hasta 50 alertas recientes de MongoDB.
+Interfaz web en `http://localhost:5000` con estas secciones:
 
-El historial y las alertas se refrescan automáticamente cada 5 segundos.
+* **Indicadores generales:** transacciones enviadas, confirmadas y con error (contadores de la sesión del navegador; se reinician al recargar la página) y total de alertas (cuenta las alertas que devuelve la API, máximo 50).
+* **Nuevo evento (envío manual):** formulario con usuario (obligatorio), cajero, tipo y monto. Con `CONSULTA_SALDO` el monto se bloquea en `0`.
+* **Simulador automático:** escribes el nombre del usuario que generará los eventos y pulsas **Iniciar envío automático**. El navegador envía una transacción aleatoria de alguno de los cinco cajeros **aproximadamente cada segundo**, hasta que pulses **Detener envío automático** (se completa la solicitud en curso). Cerca del 30 % de las operaciones con dinero supera los `$800.000` COP (y por tanto genera alerta); el resto es de `$10.000` a `$790.000`, en múltiplos de `$10.000`. Mientras el simulador corre, el envío manual queda deshabilitado, y solo funciona mientras la pestaña del dashboard esté abierta.
+* **Últimos envíos:** las 10 transacciones más recientes, leídas desde MongoDB.
+* **Historial de transacciones:** hasta 100 registros recientes de MongoDB.
+* **Alertas de seguridad:** hasta 50 alertas recientes de MongoDB, con ID de transacción, cajero, tipo, monto y motivo.
+
+El historial, las alertas y los últimos envíos se refrescan automáticamente cada 5 segundos. Como esas tablas se leen de MongoDB, una transacción aparece solo después de que Spark la haya procesado.
 
 ---
 
 # 🚀 Instalación y ejecución paso a paso
 
-> Necesitarás **tres ventanas de PowerShell** abiertas en la carpeta del proyecto (cuatro si también quieres usar el productor automático):
+> Necesitarás **tres ventanas de PowerShell** abiertas en la carpeta del proyecto (cuatro si también quieres usar el productor por consola):
 > una para Kafka/MongoDB y comandos, una para Spark y una para el dashboard.
 
 ## 1. Instalar las dependencias de Python
@@ -326,13 +330,16 @@ python app.py
 
 Abre en el navegador: **http://localhost:5000**
 
-Desde ahí puedes llenar el formulario y pulsar **"Enviar a Kafka"**. Para probar una alerta, envía un retiro, depósito o transferencia **mayor a $800.000** (por ejemplo, `1000000`).
+Desde ahí puedes:
+
+* **Enviar una transacción manual:** completa el formulario y pulsa **"Enviar transacción manual"**. Para probar una alerta, envía un retiro, depósito o transferencia **mayor a $800.000** (por ejemplo, `1000000`).
+* **Generar tráfico automático:** escribe un nombre en **"Usuario que genera los eventos"** y pulsa **"Iniciar envío automático"**. Para parar, pulsa **"Detener envío automático"**.
 
 > Kafka debe estar encendido antes de iniciar `app.py`, porque el productor de Kafka se crea al arrancar la aplicación.
 
-## 7. (Opcional) Ejecutar el productor automático (Terminal 4)
+## 7. (Opcional) Ejecutar el productor por consola (Terminal 4)
 
-Si quieres generar tráfico continuo sin usar el formulario:
+El dashboard ya trae su propio simulador automático (paso 6). Si prefieres generar tráfico continuo desde la consola, sin abrir el navegador:
 
 ```powershell
 cd "$HOME\Desktop\ejercicio-atm"
@@ -368,8 +375,9 @@ LOTE 4 FINALIZADO: 2 transacciones procesadas; 1 alertas detectadas.
 
 **En el dashboard** (`http://localhost:5000`):
 
-* La tabla **Transacciones almacenadas** muestra las transacciones guardadas en MongoDB, ordenadas de la más reciente a la más antigua.
-* La tabla **Alertas detectadas** muestra las transacciones que superaron `$800.000` COP, con severidad `ALTA`.
+* Las tarjetas **Transacciones enviadas / confirmadas / Errores de envío** suben con cada envío (manual o automático) y **Total de alertas** refleja las alertas guardadas.
+* **Últimos envíos** y **Historial de transacciones** muestran lo guardado en MongoDB, de la más reciente a la más antigua.
+* **Alertas de seguridad** lista las transacciones que superaron `$800.000` COP.
 * Los datos pueden tardar unos segundos en aparecer (Spark procesa por micro-batches y el dashboard consulta cada 5 s).
 
 **Verificación directa en MongoDB** (opcional):
@@ -384,12 +392,12 @@ docker exec -it atm-mongodb mongosh monitoreo_atm --eval "db.transacciones.count
 
 # 🔄 Cómo funciona
 
-1. **Generación:** el dashboard (`app.py`) valida el formulario y arma la transacción; el simulador (`productor.py`) crea transacciones aleatorias.
+1. **Generación:** el navegador crea la transacción (a mano desde el formulario o con el simulador automático del dashboard) y la envía a Flask, que la valida y arma el evento; opcionalmente, `productor.py` crea transacciones aleatorias desde la consola.
 2. **Envío:** ambos serializan el evento a JSON y lo publican en el tópico `transacciones-atm` mediante `localhost:9092`. El dashboard espera la confirmación de Kafka antes de responder `201`.
 3. **Recepción:** Kafka almacena los eventos y los deja disponibles para los consumidores.
 4. **Procesamiento:** Spark se conecta por la red interna de Docker (`kafka:29092`), lee los eventos y convierte el JSON a columnas usando un esquema definido.
 5. **Almacenamiento:** en cada micro-batch, `procesar_lote` guarda cada transacción en MongoDB (`atm-mongodb:27017`) y, si supera el umbral, registra una alerta.
-6. **Visualización:** el dashboard consulta MongoDB (`localhost:27017`) a través de la API y actualiza las tablas cada 5 segundos.
+6. **Visualización:** el dashboard consulta MongoDB (`localhost:27017`) a través de la API y actualiza el historial, las alertas y los últimos envíos cada 5 segundos.
 
 ### Conceptos aplicados
 
@@ -410,6 +418,8 @@ docker exec -it atm-mongodb mongosh monitoreo_atm --eval "db.transacciones.count
 | `POST` | `/api/transacciones`| Valida y envía una transacción a Kafka. Responde `201`, `400` (datos inválidos) o `503` (Kafka no disponible). |
 | `GET`  | `/api/transacciones`| Últimas 100 transacciones guardadas en MongoDB.                             |
 | `GET`  | `/api/alertas`      | Últimas 50 alertas guardadas en MongoDB.                                    |
+
+El simulador automático del dashboard usa este mismo endpoint (una llamada por transacción).
 
 Ejemplo de envío desde PowerShell:
 
@@ -460,8 +470,10 @@ Para volver a ejecutar todo desde cero, repite desde el [paso 2](#2-levantar-kaf
 | `ERROR procesando lote ...` con error de MongoDB en Spark | MongoDB está apagado o aún no arranca | Revisa `docker ps` (debe estar `atm-mongodb`) y reinicia con `docker compose up -d`. |
 | El dashboard dice "No se pudo consultar el historial" | MongoDB apagado o puerto `27017` no disponible | Verifica que `atm-mongodb` esté `Up` y que nada más use el puerto 27017. |
 | El dashboard muestra "No se pudo enviar la transacción" | Kafka no está funcionando | Revisa `docker ps` y `docker logs atm-kafka`; reinicia `app.py` si Kafka estuvo apagado. |
-| Envío exitoso pero el historial no muestra datos | Spark no está corriendo, o se inició después del envío (offset `latest`) | Deja Spark corriendo **antes** de enviar transacciones y espera unos segundos. |
+| Envío exitoso pero el historial y los últimos envíos no muestran datos | Spark no está corriendo, o se inició después del envío (offset `latest`) | Deja Spark corriendo **antes** de enviar transacciones y espera unos segundos. |
 | No aparecen alertas | El monto no supera `$800.000` o es una consulta de saldo | Envía un retiro, depósito o transferencia mayor a `800000`. |
+| El simulador automático no inicia y pide un nombre | El campo "Usuario que genera los eventos" está vacío | Escribe un nombre y vuelve a pulsar "Iniciar envío automático". |
+| El contador "Total de alertas" no pasa de 50 | La API devuelve solo las 50 alertas más recientes | Es normal; para el total real consulta MongoDB: `docker exec -it atm-mongodb mongosh monitoreo_atm --eval "db.alertas.countDocuments()"`. |
 | Falla la descarga de `--packages` | Sin internet o problema de permisos en `.ivy2` | Revisa la conexión, confirma que la carpeta `.ivy2` existe y vuelve a ejecutar. |
 | `${PWD}` no se reconoce | Estás usando CMD en lugar de PowerShell | Usa PowerShell, o reemplaza `${PWD}` por la ruta completa del proyecto. |
 | Puerto `9092`, `27017` o `5000` ocupado | Otro servicio usa ese puerto | Cierra el otro servicio o cambia el puerto en `docker-compose.yml` / `app.py` (y en el código que lo usa). |
