@@ -519,7 +519,7 @@ async function ejecutarSimuladorAutomatico() {
 
         // Una transacción aproximadamente cada segundo.
         if (envioAutomaticoActivo) {
-            await esperar(1000);
+            await esperar(0);
         }
     }
 
