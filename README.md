@@ -17,8 +17,9 @@ Las transacciones de una red de cajeros automáticos se generan desde un **dashb
 7. [Resultado esperado](#-resultado-esperado)
 8. [Cómo funciona](#-cómo-funciona)
 9. [API del dashboard](#-api-del-dashboard)
-10. [Detener y limpiar](#-detener-y-limpiar)
-11. [Solución de problemas](#-solución-de-problemas)
+10. [Respaldo de MongoDB (copiar los datos a otro computador)](#-respaldo-de-mongodb)
+11. [Detener y limpiar](#-detener-y-limpiar)
+12. [Solución de problemas](#-solución-de-problemas)
 
 ---
 
@@ -123,11 +124,11 @@ python --version
 
 ```powershell
 cd "$HOME\Desktop"
-git clone <URL-DEL-REPOSITORIO> ejercicio-atm
+git clone https://github.com/JamesLozano1/ejercicio-atm.git ejercicio-atm
 cd ejercicio-atm
 ```
 
-> Reemplaza `<URL-DEL-REPOSITORIO>` por la URL de tu repositorio.
+> El repositorio ya incluye el respaldo de la base de datos (`backups/monitoreo_atm.archive`), así que al clonarlo tendrás también los datos. Para cargarlos en MongoDB sigue el [paso 2.1](#21-restaurar-los-datos-de-mongodb-respaldo-incluido).
 
 ### Opción B: descargando el ZIP
 
@@ -154,6 +155,8 @@ ejercicio-atm/
 ├── app.py                      # Servidor Flask: dashboard y API REST
 ├── productor.py                # Simulador de transacciones por consola (opcional)
 ├── spark_consumer.py           # Spark Streaming: guarda transacciones y genera alertas
+├── backups/
+│   └── monitoreo_atm.archive   # Respaldo comprimido de la base MongoDB `monitoreo_atm` (transacciones y alertas)
 ├── templates/
 │   └── index.html              # Página del dashboard
 ├── static/
@@ -161,7 +164,7 @@ ejercicio-atm/
 │   └── js/dashboard.js         # Lógica del dashboard (envío manual, simulador automático, actualización cada 5 s)
 ├── spark_consumer_original.py  # Versiones anteriores del consumidor (solo referencia)
 ├── spark_consumer_antes_transacciones.py
-└── .ivy2/                      # Caché de paquetes de Spark (se crea en el paso 4)
+└── .ivy2/                      # Caché de paquetes de Spark (se crea en el paso 4; no es necesario subirla a Git)
 ```
 
 ### `docker-compose.yml`
@@ -263,6 +266,28 @@ docker network ls
 ```
 
 Debe aparecer `ejercicio-atm_atm-network`.
+
+## 2.1 Restaurar los datos de MongoDB (respaldo incluido)
+
+Si descargaste el proyecto de GitHub, la carpeta `backups/` trae una copia de la base `monitoreo_atm` con las transacciones y alertas que se generaron en el computador original. Para tenerlas en este equipo, con `atm-mongodb` en estado `Up` (paso 2), ejecuta desde la carpeta del proyecto:
+
+```powershell
+docker cp .\backups\monitoreo_atm.archive atm-mongodb:/tmp/monitoreo_atm.archive
+
+docker exec atm-mongodb mongorestore --archive=/tmp/monitoreo_atm.archive --gzip --drop
+```
+
+Comprueba que se cargaron:
+
+```powershell
+docker exec -it atm-mongodb mongosh monitoreo_atm --quiet --eval "print('transacciones: ' + db.transacciones.countDocuments()); print('alertas: ' + db.alertas.countDocuments())"
+```
+
+Con el respaldo actual deberías ver aproximadamente **7.800 transacciones** y **1.800 alertas**. El dashboard (paso 6) mostrará estos datos de inmediato, **sin necesidad de tener Spark corriendo**; Spark solo hace falta para procesar transacciones nuevas.
+
+> ⚠️ `--drop` borra las colecciones `transacciones` y `alertas` que ya existan en ese MongoDB antes de importar el respaldo. No lo uses sobre datos que quieras conservar sin hacer antes otro respaldo (ver [Respaldo de MongoDB](#-respaldo-de-mongodb)).
+>
+> Si no quieres cargar datos y prefieres empezar con la base vacía, omite este paso.
 
 ## 3. Verificar / crear el tópico
 
@@ -431,6 +456,48 @@ Invoke-RestMethod -Uri http://localhost:5000/api/transacciones `
 
 ---
 
+# 💾 Respaldo de MongoDB
+
+El respaldo se guarda en `backups/monitoreo_atm.archive` (formato `mongodump`, comprimido con gzip) y se versiona en GitHub para poder llevar los mismos datos a otro computador. `mongodump` y `mongorestore` ya vienen dentro de la imagen `mongo:7`, no hace falta instalar nada más.
+
+### Crear o actualizar el respaldo (computador de origen)
+
+Con `atm-mongodb` en ejecución:
+
+```powershell
+cd "$HOME\Desktop\ejercicio-atm"
+New-Item -ItemType Directory -Force .\backups
+
+docker exec atm-mongodb mongodump --db monitoreo_atm --archive=/tmp/monitoreo_atm.archive --gzip
+docker cp atm-mongodb:/tmp/monitoreo_atm.archive .\backups\monitoreo_atm.archive
+```
+
+### Subirlo a GitHub
+
+`.gitignore` excluye `*.archive` para no subir respaldos por accidente. El archivo del proyecto ya está registrado en Git, así que los cambios se detectan normalmente; si fuera la primera vez, o Git lo ignora, fuerza su inclusión:
+
+```powershell
+git add -f backups/monitoreo_atm.archive
+git commit -m "Actualizar respaldo de MongoDB"
+git push origin main
+```
+
+> Si tu rama no se llama `main`, consulta la actual con `git branch --show-current`.
+> ⚠️ En un repositorio público cualquiera puede descargar el respaldo. Antes de subirlo, revisa que no contenga datos sensibles (los campos `usuario` guardan los nombres escritos en el dashboard).
+
+### Restaurarlo en otro computador
+
+Es el [paso 2.1](#21-restaurar-los-datos-de-mongodb-respaldo-incluido):
+
+```powershell
+git pull        # si ya tenías el proyecto clonado
+docker compose up -d
+docker cp .\backups\monitoreo_atm.archive atm-mongodb:/tmp/monitoreo_atm.archive
+docker exec atm-mongodb mongorestore --archive=/tmp/monitoreo_atm.archive --gzip --drop
+```
+
+---
+
 # 🧹 Detener y limpiar
 
 1. Detener el dashboard, Spark y el productor con `Ctrl + C` en cada terminal.
@@ -445,6 +512,8 @@ docker compose down
 ```powershell
 docker compose down -v
 ```
+
+> Si hiciste esto, puedes recuperar los datos con el respaldo del [paso 2.1](#21-restaurar-los-datos-de-mongodb-respaldo-incluido).
 
 4. (Opcional) Borrar la caché de paquetes de Spark:
 
@@ -474,6 +543,9 @@ Para volver a ejecutar todo desde cero, repite desde el [paso 2](#2-levantar-kaf
 | No aparecen alertas | El monto no supera `$800.000` o es una consulta de saldo | Envía un retiro, depósito o transferencia mayor a `800000`. |
 | El simulador automático no inicia y pide un nombre | El campo "Usuario que genera los eventos" está vacío | Escribe un nombre y vuelve a pulsar "Iniciar envío automático". |
 | El contador "Total de alertas" no pasa de 50 | La API devuelve solo las 50 alertas más recientes | Es normal; para el total real consulta MongoDB: `docker exec -it atm-mongodb mongosh monitoreo_atm --eval "db.alertas.countDocuments()"`. |
+| `mongorestore` falla con `no such file` o `Failed: ... archive` | El archivo no se copió al contenedor o el nombre no coincide | Ejecuta primero `docker cp` desde la carpeta del proyecto y verifica que exista `backups\monitoreo_atm.archive`. |
+| Tras restaurar, el dashboard sigue vacío | Se restauró en otro MongoDB o el contenedor se recreó con `down -v` después | Verifica con el comando de conteo del paso 2.1 y repite la restauración. |
+| `git pull` no trae el respaldo o aparece como ignorado | `.gitignore` excluye `*.archive` | Usa `git add -f backups/monitoreo_atm.archive` al subirlo. |
 | Falla la descarga de `--packages` | Sin internet o problema de permisos en `.ivy2` | Revisa la conexión, confirma que la carpeta `.ivy2` existe y vuelve a ejecutar. |
 | `${PWD}` no se reconoce | Estás usando CMD en lugar de PowerShell | Usa PowerShell, o reemplaza `${PWD}` por la ruta completa del proyecto. |
 | Puerto `9092`, `27017` o `5000` ocupado | Otro servicio usa ese puerto | Cierra el otro servicio o cambia el puerto en `docker-compose.yml` / `app.py` (y en el código que lo usa). |

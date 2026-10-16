@@ -1,4 +1,3 @@
-
 # Entorno virtual de Python
 venv/
 .venv/
@@ -23,6 +22,10 @@ __pycache__/
 *.archive
 *.bson
 *.dump
+
+# Excepción: respaldo de la base de datos del proyecto (sí se versiona)
+!backups/
+!backups/monitoreo_atm.archive
 
 # Archivos del sistema
 .DS_Store
