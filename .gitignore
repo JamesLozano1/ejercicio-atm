@@ -1,0 +1,29 @@
+
+# Entorno virtual de Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Secretos y variables locales
+.env
+.env.*
+!.env.example
+
+# Archivos de configuración local
+.vscode/
+.idea/
+
+# Datos y caché locales
+.ivy2/
+.sparkStaging/
+*.log
+
+# Respaldos locales de bases de datos
+*.archive
+*.bson
+*.dump
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
