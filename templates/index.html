@@ -1,0 +1,229 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ATM Monitor | Centro de operaciones</title>
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <header class="topbar">
+        <div class="brand">
+            <div class="brand-icon">ATM</div>
+            <div>
+                <h1>ATM Monitor</h1>
+                <p>Centro de monitoreo de transacciones</p>
+            </div>
+        </div>
+        <div class="connection">
+            <span class="status-dot"></span>
+            Panel de operaciones
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="welcome">
+            <div>
+                <p class="eyebrow">SISTEMA DE BD MASIVAS</p>
+                <h2>Monitoreo de cajeros automáticos</h2>
+                <p>Procesamiento de transacciones con Kafka y Spark.</p>
+            </div>
+            <div class="date-card">
+                <span>FECHA DEL SISTEMA</span>
+                <strong id="fechaActual">--</strong>
+            </div>
+        </section>
+
+        <!-- Indicadores de la sesión -->
+        <section class="metrics">
+            <article class="metric-card">
+                <span>Enviadas desde esta página</span>
+                <strong id="totalEnviadas">0</strong>
+                <small>Durante esta sesión del navegador</small>
+            </article>
+            <article class="metric-card">
+                <span>Envíos confirmados</span>
+                <strong id="totalConfirmadas">0</strong>
+                <small>Confirmaciones recibidas del servidor</small>
+            </article>
+            <article class="metric-card">
+                <span>Errores de envío</span>
+                <strong id="totalErrores">0</strong>
+                <small>Solicitudes fallidas</small>
+            </article>
+        </section>
+
+        <!-- Formulario y actividad de la sesión -->
+        <section class="content-grid">
+            <article class="panel">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">NUEVO EVENTO</p>
+                        <h3>Enviar transacción</h3>
+                    </div>
+                    <span class="tag">Kafka</span>
+                </div>
+
+                <form id="formTransaccion">
+                    <label for="usuario">Nombre del usuario</label>
+                    <input id="usuario" name="usuario" type="text"
+                           maxlength="60" placeholder="Ej. Estudiante 1">
+
+                    <label for="atm_id">Cajero automático</label>
+                    <select id="atm_id" name="atm_id" required>
+                        <option value="ATM-001">ATM-001</option>
+                        <option value="ATM-002">ATM-002</option>
+                        <option value="ATM-003">ATM-003</option>
+                        <option value="ATM-004">ATM-004</option>
+                        <option value="ATM-005">ATM-005</option>
+                    </select>
+
+                    <label for="transaction_type">Tipo de transacción</label>
+                    <select id="transaction_type"
+                            name="transaction_type" required>
+                        <option value="RETIRO">Retiro</option>
+                        <option value="DEPOSITO">Depósito</option>
+                        <option value="CONSULTA_SALDO">
+                            Consulta de saldo
+                        </option>
+                        <option value="TRANSFERENCIA">Transferencia</option>
+                    </select>
+
+                    <label for="amount">Monto (COP)</label>
+                    <input id="amount" name="amount" type="number"
+                           min="1" max="100000000" step="1" value="50000">
+
+                    <p class="help" id="ayudaMonto">
+                        Ingresa el valor en pesos colombianos.
+                    </p>
+
+                    <button id="btnEnviar" type="submit">
+                        Enviar a Kafka
+                    </button>
+                    <p id="mensaje" class="message"
+                       role="status" aria-live="polite"></p>
+                </form>
+            </article>
+
+            <article class="panel">
+                <div class="panel-heading">
+                    <div>
+                        <p class="eyebrow">ACTIVIDAD DE LA SESIÓN</p>
+                        <h3>Últimos envíos</h3>
+                    </div>
+                    <span class="tag tag-light">Local</span>
+                </div>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Cajero</th>
+                                <th>Tipo</th>
+                                <th>Monto</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tablaTransacciones">
+                            <tr id="filaVacia">
+                                <td colspan="4" class="empty">
+                                    Aún no has enviado transacciones.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="help">
+                    Registros de los envíos realizados en esta sesión.
+                </p>
+            </article>
+        </section>
+
+        <!-- Historial persistente de MongoDB -->
+        <section class="panel" style="margin-top: 24px;">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">HISTORIAL PERSISTENTE</p>
+                    <h3>Transacciones almacenadas</h3>
+                </div>
+                <span class="tag tag-light" id="estadoHistorial">
+                    Consultando...
+                </span>
+            </div>
+
+            <p class="help">
+                Datos guardados en MongoDB después del procesamiento de Spark.
+                Se muestran hasta 100 registros recientes.
+            </p>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>ID transacción</th>
+                            <th>Cajero</th>
+                            <th>Tipo</th>
+                            <th>Monto</th>
+                            <th>Usuario</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaHistorial">
+                        <tr>
+                            <td colspan="6" class="empty">
+                                Cargando historial...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Alertas persistentes de MongoDB -->
+        <section class="panel" style="margin-top: 24px;">
+            <div class="panel-heading">
+                <div>
+                    <p class="eyebrow">MONITOREO DE SEGURIDAD</p>
+                    <h3>Alertas detectadas</h3>
+                </div>
+                <span class="tag" id="totalAlertas">0 alertas</span>
+            </div>
+
+            <p class="help">
+                Spark genera alertas para transacciones superiores a
+                $800.000 COP, excepto consultas de saldo.
+            </p>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Fecha de detección</th>
+                            <th>Cajero</th>
+                            <th>Tipo</th>
+                            <th>Monto</th>
+                            <th>Severidad</th>
+                            <th>Descripción</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablaAlertas">
+                        <tr>
+                            <td colspan="6" class="empty">
+                                Cargando alertas...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <footer>
+            Proyecto académico · Monitoreo de redes de cajeros automáticos
+        </footer>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>

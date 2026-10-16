@@ -1,0 +1,3 @@
+﻿Flask
+kafka-python==2.2.15
+pymongo==4.19.0
